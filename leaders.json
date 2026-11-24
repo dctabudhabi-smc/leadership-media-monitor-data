@@ -1,0 +1,39 @@
+{
+  "_how_to_fill": "Sprinklr returns the topic name for TOPIC_IDS with this payload, so topic_ids holds the topic names. Run discover to list them.",
+  "mkm": {
+    "name": "H.E. Mohamed Khalifa Al Mubarak",
+    "match": [
+      "mohamed",
+      "mohammed",
+      "khalifa al mubarak",
+      "محمد"
+    ],
+    "topic_ids": [
+      "LMN - Mohamed Al Mubarak"
+    ],
+    "topic_id": "6b0431bae37db7786920de5c"
+  },
+  "kkm": {
+    "name": "H.E. Khaldoon Khalifa Al Mubarak",
+    "match": [
+      "khaldoon",
+      "خلدون"
+    ],
+    "topic_ids": [
+      "LMN - Khaldoon Al Mubarak"
+    ],
+    "topic_id": "6b04328fe37db77869213960"
+  },
+  "saj": {
+    "name": "H.E. Dr Sultan Ahmed Al Jaber",
+    "match": [
+      "sultan",
+      "jaber",
+      "سلطان"
+    ],
+    "topic_ids": [
+      "LMN - Sultan Al Jaber"
+    ],
+    "topic_id": "6b04331fe37db77869217998"
+  }
+}

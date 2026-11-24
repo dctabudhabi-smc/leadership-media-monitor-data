@@ -1,0 +1,215 @@
+{
+  "_how_it_works": "Each dashboard section is fed by Sprinklr widget payloads saved in widgets/. Paste a payload into the chat with the section name, or save it as widgets/<file> and update 'edited'.",
+  "widgets": {
+    "topic_totals": {
+      "title": "Mentions, potential reach, media value",
+      "feeds": [
+        "cards"
+      ],
+      "needs": "Topic; Mentions, Overall reach (shown as potential reach), Reach count, EMV. All sources.",
+      "file": "widgets/topic_totals.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD with comparison periods"
+    },
+    "topic_share": {
+      "title": "Share of voice",
+      "feeds": [
+        "sov"
+      ],
+      "needs": "Topic; Mentions. All sources. Cross-checks the totals.",
+      "file": "widgets/topic_share.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD with comparison periods"
+    },
+    "sentiment_topic": {
+      "title": "Sentiment",
+      "feeds": [
+        "sentiment"
+      ],
+      "needs": "Topic and Sentiment, uncategorised excluded; Mentions.",
+      "file": "widgets/sentiment_topic.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD with comparison periods",
+      "note": "Also feeds the negative sentiment share on the leader cards: negative mentions over all categorised mentions."
+    },
+    "daily_mentions": {
+      "title": "Mentions over time",
+      "feeds": [
+        "trend"
+      ],
+      "needs": "Date (daily) and Topic; Mentions.",
+      "file": "widgets/daily_mentions.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "once, from history_start to yesterday"
+    },
+    "daily_reach": {
+      "title": "Reach over time",
+      "feeds": [
+        "trend"
+      ],
+      "needs": "Date (daily) and Topic; Overall reach.",
+      "file": "widgets/daily_reach.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "once, from history_start to yesterday"
+    },
+    "daily_emv": {
+      "title": "EMV over time",
+      "feeds": [
+        "trend"
+      ],
+      "needs": "Date (daily) and Topic; EMV.",
+      "file": "widgets/daily_emv.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "once, from history_start to yesterday"
+    },
+    "country_topic": {
+      "title": "Coverage by country",
+      "feeds": [
+        "markets"
+      ],
+      "needs": "Country and Topic; Mentions. Unknown country excluded.",
+      "file": "widgets/country_topic.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "language_topic": {
+      "title": "Coverage by language",
+      "feeds": [
+        "languages"
+      ],
+      "needs": "Language and Topic; Mentions.",
+      "file": "widgets/language_topic.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "source_topic": {
+      "title": "Coverage by source",
+      "feeds": [
+        "media"
+      ],
+      "needs": "Source and Topic; Mentions.",
+      "file": "widgets/source_topic.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "publications_mkm": {
+      "title": "Top publications - Mohamed Al Mubarak",
+      "feeds": [
+        "publications"
+      ],
+      "leader": "mkm",
+      "needs": "Domain; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs.",
+      "file": "widgets/publications_mkm.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "publications_kkm": {
+      "title": "Top publications - Khaldoon Al Mubarak",
+      "feeds": [
+        "publications"
+      ],
+      "leader": "kkm",
+      "needs": "Domain; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs.",
+      "file": "widgets/publications_kkm.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "publications_saj": {
+      "title": "Top publications - Dr Sultan Al Jaber",
+      "feeds": [
+        "publications"
+      ],
+      "leader": "saj",
+      "needs": "Domain; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs.",
+      "file": "widgets/publications_saj.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "note": "Sent with the LMN topic tag (all three leaders); corrected to this leader's topic ID to match Khaldoon's widget."
+    },
+    "themes_mkm": {
+      "title": "Mentions by theme - Mohamed Al Mubarak",
+      "feeds": [
+        "themes"
+      ],
+      "leader": "mkm",
+      "needs": "Theme (LMN Themes); Mentions. News and Blogs.",
+      "file": "widgets/themes_mkm.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "themes_kkm": {
+      "title": "Mentions by theme - Khaldoon Al Mubarak",
+      "feeds": [
+        "themes"
+      ],
+      "leader": "kkm",
+      "needs": "Theme (LMN Themes); Mentions. News and Blogs.",
+      "file": "widgets/themes_kkm.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "themes_saj": {
+      "title": "Mentions by theme - Dr Sultan Al Jaber",
+      "feeds": [
+        "themes"
+      ],
+      "leader": "saj",
+      "needs": "Theme (LMN Themes); Mentions. News and Blogs.",
+      "file": "widgets/themes_saj.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "clippings_mkm": {
+      "title": "Clippings - Mohamed Al Mubarak",
+      "feeds": [
+        "clippings"
+      ],
+      "leader": "mkm",
+      "needs": "Message, date, domain, country, language, content, sentiment; Overall reach, Moz rank. Sorted by Moz rank.",
+      "file": "widgets/clippings_mkm.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "note": "Includes TV and Radio; the Khaldoon and Dr Sultan clippings cover news and blogs only."
+    },
+    "clippings_kkm": {
+      "title": "Clippings - Khaldoon Al Mubarak",
+      "feeds": [
+        "clippings"
+      ],
+      "leader": "kkm",
+      "needs": "Message, date, domain, country, language, content, sentiment; Overall reach, Moz rank. Sorted by Moz rank.",
+      "file": "widgets/clippings_kkm.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "clippings_saj": {
+      "title": "Clippings - Dr Sultan Al Jaber",
+      "feeds": [
+        "clippings"
+      ],
+      "leader": "saj",
+      "needs": "Message, date, domain, country, language, content, sentiment; Overall reach, Moz rank. Sorted by Moz rank.",
+      "file": "widgets/clippings_saj.json",
+      "status": "received",
+      "edited": "2026-11-24",
+      "run": "per period: 7D, 30D, 90D, YTD"
+    }
+  }
+}

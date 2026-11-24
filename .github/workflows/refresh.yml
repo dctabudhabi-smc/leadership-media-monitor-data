@@ -1,0 +1,72 @@
+name: Sprinklr refresh
+
+# 08:15 and 15:15 UAE time (04:15 and 11:15 UTC). GitHub can start scheduled runs
+# 10 to 20 minutes late, so this leaves time before Claude publishes at 08:45 and 15:45.
+on:
+  schedule:
+    - cron: "15 4 * * *"
+    - cron: "15 11 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+# Sprinklr keeps one live token pair per API key: never let two runs refresh at once.
+concurrency:
+  group: sprinklr-token
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packages
+        run: pip install pycountry
+
+      - name: Restore the latest Sprinklr token pair
+        env:
+          TOKEN_KEY: ${{ secrets.TOKEN_KEY }}
+        run: |
+          if [ -f tokens.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in tokens.enc -out .tokens.json -pass env:TOKEN_KEY
+            chmod 600 .tokens.json
+          else
+            echo "No saved token yet: the first run uses the SPRINKLR_REFRESH_TOKEN secret."
+          fi
+
+      - name: Build data.json from Sprinklr
+        env:
+          SPRINKLR_CLIENT_ID: ${{ secrets.SPRINKLR_CLIENT_ID }}
+          SPRINKLR_CLIENT_SECRET: ${{ secrets.SPRINKLR_CLIENT_SECRET }}
+          SPRINKLR_REFRESH_TOKEN: ${{ secrets.SPRINKLR_REFRESH_TOKEN }}
+        run: python -u sprinklr_refresh.py build
+
+      # Runs even if the build failed, so a token that was rotated is never lost.
+      - name: Save the new token pair (encrypted)
+        if: always()
+        env:
+          TOKEN_KEY: ${{ secrets.TOKEN_KEY }}
+        run: |
+          if [ -f .tokens.json ]; then
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in .tokens.json -out tokens.enc -pass env:TOKEN_KEY
+          fi
+
+      - name: Commit data and token
+        if: always()
+        run: |
+          git config user.name "sprinklr-refresh"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/data.json tokens.enc 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Nothing changed."
+          else
+            git commit -m "Sprinklr refresh $(TZ=Asia/Dubai date '+%d %B %Y %H:%M') GST"
+            git push
+          fi

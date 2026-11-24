@@ -1,0 +1,805 @@
+#!/usr/bin/env python3
+"""Leadership Media Monitor - Sprinklr refresh.
+
+Runs the Sprinklr widget payloads saved in widgets/, turns the results into the
+dashboard's data.json, and marks each dashboard section Live once its widget
+returns data. Sections without a widget keep their illustrative data.
+
+Commands
+  python sprinklr_refresh.py token        refresh the access token and show token status
+  python sprinklr_refresh.py discover     run the received widgets for the last 30 days, list topic IDs and names
+  python sprinklr_refresh.py build        fetch everything, check it, write data.json
+  python sprinklr_refresh.py build --dry-run   fetch and check, do not write data.json
+
+Credentials come from environment variables or a .env file next to this script:
+  SPRINKLR_CLIENT_ID, SPRINKLR_CLIENT_SECRET, SPRINKLR_REFRESH_TOKEN (first run only)
+Use --access-token <token> to run with an access token someone else refreshed (nothing rotates).
+
+Token rule: Sprinklr keeps one token pair per API key and every refresh token works once.
+This script saves the new refresh token to .tokens.json before it does anything else.
+Do not refresh with the same API key anywhere else.
+
+Standard library only (Python 3.9 or later).
+"""
+import argparse, copy, datetime as dt, json, os, pathlib, sys, time
+import urllib.error, urllib.parse, urllib.request
+from zoneinfo import ZoneInfo
+
+ROOT = pathlib.Path(__file__).resolve().parent
+CFG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+REG = json.loads((ROOT / "registry.json").read_text(encoding="utf-8"))["widgets"]
+TOKENS = ROOT / ".tokens.json"
+RAW = ROOT / "raw"
+TZ = ZoneInfo(CFG["timezone"])
+def base():
+    return f'{os.environ.get("SPRINKLR_API_HOST", CFG["api_host"]).rstrip("/")}/{CFG["env"]}'
+ACCESS_OVERRIDE = None
+
+
+# ---------------------------------------------------------------- credentials
+def load_env():
+    f = ROOT / ".env"
+    if f.exists():
+        for line in f.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+def need(name):
+    v = os.environ.get(name, "").strip()
+    if not v:
+        sys.exit(f"Missing {name}. Set it as an environment variable or in .env (see .env.example).")
+    return v
+
+
+def http(method, url, data=None, headers=None, form=False, timeout=90):
+    body = None
+    headers = dict(headers or {})
+    if data is not None:
+        if form:
+            body = urllib.parse.urlencode(data).encode()
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        else:
+            body = json.dumps(data).encode()
+            headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=body, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+
+
+def save_tokens(t):
+    TOKENS.write_text(json.dumps(t, indent=2), encoding="utf-8")
+    try:
+        os.chmod(TOKENS, 0o600)
+    except OSError:
+        pass
+    with open(ROOT / "token_log.txt", "a", encoding="utf-8") as log:
+        log.write(f'{dt.datetime.now(TZ).isoformat(timespec="seconds")}  refreshed; new refresh token ends ...{t["refresh_token"][-8:]}\n')
+
+
+def access_token(force=False):
+    if ACCESS_OVERRIDE:
+        return ACCESS_OVERRIDE
+    t = json.loads(TOKENS.read_text(encoding="utf-8")) if TOKENS.exists() else {}
+    if not force and t.get("access_token") and t.get("expires_at", 0) > time.time() + 300:
+        return t["access_token"]
+    refresh = t.get("refresh_token") or need("SPRINKLR_REFRESH_TOKEN")
+    params = {"client_id": need("SPRINKLR_CLIENT_ID"), "client_secret": need("SPRINKLR_CLIENT_SECRET"),
+              "grant_type": "refresh_token", "refresh_token": refresh}
+    # one attempt only: a refresh token works once, so never retry with the same token
+    code, text = http("POST", f"{base()}/oauth/token", params, form=True)
+    if code != 200 or "access_token" not in text:
+        sys.exit(f"Token refresh failed ({code}): {text[:300]}\n"
+                 "The refresh token was probably already used. Get the newest one from the token owner "
+                 "or generate a new one (manual Step 2), put it in SPRINKLR_REFRESH_TOKEN and delete .tokens.json.")
+    j = json.loads(text)
+    t = {"access_token": j["access_token"], "refresh_token": j["refresh_token"],
+         "expires_at": int(time.time()) + int(j.get("expires_in", 28799)),
+         "refreshed_at": dt.datetime.now(TZ).isoformat(timespec="seconds")}
+    save_tokens(t)  # save the new refresh token before anything else
+    print(f'Token refreshed. New refresh token saved to .tokens.json (ends ...{t["refresh_token"][-8:]}). '
+          "If your team keeps a token log, record it now.")
+    return t["access_token"]
+
+
+# ---------------------------------------------------------------- reporting API
+def run_payload(payload, label, max_rows=None):
+    """POST the payload, page through every result, return (headings, rows as dicts)."""
+    tok = access_token()
+    headers = {"Authorization": f"Bearer {tok}", "key": need("SPRINKLR_CLIENT_ID")}
+    p = copy.deepcopy(payload)
+    p["page"], p["pageSize"] = 0, min(CFG["page_size"], max_rows) if max_rows else CFG["page_size"]
+    headings, rows, pages = None, [], []
+    while True:
+        code, text = http("POST", f"{base()}/api/v2/reports/query", p, headers=headers)
+        if code == 401 and not ACCESS_OVERRIDE:
+            headers["Authorization"] = f"Bearer {access_token(force=True)}"
+            code, text = http("POST", f"{base()}/api/v2/reports/query", p, headers=headers)
+        if code == 403 and "Over Rate" in text:
+            print("  rate limit, waiting 60 s"); time.sleep(60); continue
+        if code != 200:
+            sys.exit(f"{label}: report query failed ({code}): {text[:400]}")
+        j = json.loads(text)
+        pages.append(j)
+        data = j.get("data") or {}
+        if isinstance(data, list):  # some responses put rows straight under data
+            data = {"rows": data}
+        headings = headings or data.get("headings") or data.get("headers") or [
+            x.get("heading") for x in (payload.get("groupBys") or []) + (payload.get("projections") or [])]
+        page_rows = data.get("rows") or []
+        # compare dimension values only: a widget that ignores 'page' repeats the same rows, sometimes with
+        # counts that moved by one or two between calls, which a full-row compare would miss
+        sig = json.dumps([[c for c in (r.values() if isinstance(r, dict) else r) if not isinstance(c, (int, float))]
+                          for r in page_rows[:5]], default=str)[:2000]
+        if pages[:-1] and sig == getattr(run_payload, "_last_sig", None):  # some chart widgets ignore 'page' and repeat page 0
+            break
+        run_payload._last_sig = sig
+        rows += page_rows
+        if not data.get("hasMore") or (max_rows and len(rows) >= max_rows) or p["page"] >= 60:
+            break
+        p["page"] += 1
+        time.sleep(CFG["pause_between_calls_s"])
+    RAW.mkdir(exist_ok=True)
+    (RAW / f'{label}.json').write_text(json.dumps(pages, ensure_ascii=False)[:5_000_000], encoding="utf-8")
+    dicts = []
+    for r in rows:
+        if isinstance(r, dict):
+            dicts.append(r)
+        else:
+            dicts.append({h: v for h, v in zip(headings, r)})
+    return headings, dicts
+
+
+def with_window(payload, start, end):
+    p = copy.deepcopy(payload)
+    p["startTime"] = int(start.timestamp() * 1000)
+    p["endTime"] = int(end.timestamp() * 1000) - 1
+    p["timeZone"] = CFG["timezone"]
+    p.setdefault("additional", {})["Timezone"] = CFG["timezone"]
+    return p
+
+
+def windows(today=None):
+    """Rolling windows in the dashboard time zone. With include_today (the default, matching Sprinklr's
+    "Last N days") a window ends now and includes today; otherwise it ends with yesterday.
+    Returns (windows, end) where end is the exclusive end: midnight after the last included day."""
+    midnight = today or dt.datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    today = midnight + dt.timedelta(days=1) if CFG.get("include_today", True) else midnight
+    last = today - dt.timedelta(days=1)
+    out = {}
+    for per in CFG["periods"]:
+        if per == "YTD":
+            s = last.replace(month=1, day=1)
+            ps = s.replace(year=s.year - 1)
+            pe = today.replace(year=today.year - 1)
+        else:
+            n = int(per[:-1])
+            s = today - dt.timedelta(days=n)
+            ps, pe = s - dt.timedelta(days=n), s
+        out[per] = {"cur": (s, today), "prev": (ps, pe)}
+    return out, today
+
+
+def heading_for(payload, kind, name):
+    """Find the response heading of a groupBy dimension or projection measurement."""
+    items = payload.get("groupBys" if kind == "dim" else "projections") or []
+    key = "dimensionName" if kind == "dim" else "measurementName"
+    for it in items:
+        if it.get(key) == name:
+            return it.get("heading")
+    return None
+
+
+def num(v):
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# ---------------------------------------------------------------- leaders
+def leader_map():
+    L = json.loads((ROOT / "leaders.json").read_text(encoding="utf-8"))
+    m = {}
+    for lid, v in L.items():
+        if lid.startswith("_"):
+            continue
+        for t in v.get("topic_ids", []):
+            m[str(t)] = lid
+    return m
+
+
+def topic_value(row, h):
+    v = row.get(h)
+    if isinstance(v, dict):  # resolved values can come as {"id":..., "name":...}
+        return str(v.get("id") or v.get("value") or v.get("name")), v.get("name") or v.get("displayName")
+    return str(v), None
+
+
+# ---------------------------------------------------------------- widget handlers
+def load_widget(role):
+    w = REG[role]
+    f = ROOT / w["file"]
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+
+
+def per_period(role, payload, measures, extra_dim=None, sides=("cur", "prev")):
+    """Run a Topic (+ one dimension) widget for every period (and comparison period).
+    Returns {period: {side: {leader: {measure: value} or {dim_value: {measure: value}}}}}"""
+    tmap = leader_map()
+    th = heading_for(payload, "dim", "TOPIC_IDS")
+    dh = heading_for(payload, "dim", extra_dim) if extra_dim else None
+    mh = {m: heading_for(payload, "proj", m) for m in measures}
+    wins, _ = windows()
+    out = {}
+    for per, w in wins.items():
+        out[per] = {}
+        for side in sides:
+            s, e = w[side]
+            _, rows = run_payload(with_window(payload, s, e), f"{role}_{per}_{side}")
+            out[per][side] = aggregate(rows, tmap, th, dh, mh)
+    return out
+
+
+def aggregate(rows, tmap, th, dh, mh):
+    agg = {}
+    for r in rows:
+        lid = tmap.get(topic_value(r, th)[0])
+        if not lid:
+            continue
+        vals = {m: num(r.get(h)) for m, h in mh.items() if h}
+        if dh:
+            dv, dname = topic_value(r, dh)
+            slot = agg.setdefault(lid, {}).setdefault(dname or dv, {m: 0.0 for m in vals})
+        else:
+            slot = agg.setdefault(lid, {m: 0.0 for m in vals})
+        for m, v in vals.items():
+            slot[m] = slot.get(m, 0.0) + v
+    return agg
+
+
+def h_topic_totals(payload):
+    return per_period("topic_totals", payload, ["MENTIONS_COUNT", "OVERALL_REACH", "EMV", "DISTINCT_DOMAIN_COUNT"])
+
+
+def h_sentiment(payload):
+    return per_period("sentiment_topic", payload, ["MENTIONS_COUNT"], extra_dim="SEM_SENTIMENT")
+
+
+def with_topic(payload, topic_id):
+    p = copy.deepcopy(payload)
+    p["filters"] = [f for f in p.get("filters", []) if f.get("dimensionName") != "TOPIC_TAGS"] + [
+        {"dimensionName": "TOPIC_IDS", "filterType": "IN", "values": [topic_id], "details": {"type": "DIMENSION", "OLD_DIM_NAME": "TOPIC", "dF": True}}]
+    return p
+
+
+CHART_CAP = 100  # dimension widgets return at most 100 rows and ignore 'page'
+ISO_OVERRIDES = {
+    "united arab emirates": "AE", "uae": "AE", "united states": "US", "united kingdom": "GB", "turkey": "TR",
+    "ivory coast": "CI", "palestinian territory": "PS", "palestine": "PS", "kosovo": "XK", "russia": "RU",
+    "south korea": "KR", "north korea": "KP", "iran": "IR", "vietnam": "VN", "laos": "LA", "syria": "SY",
+    "bolivia": "BO", "venezuela": "VE", "tanzania": "TZ", "moldova": "MD", "czech republic": "CZ", "taiwan": "TW",
+    "macedonia": "MK", "north macedonia": "MK", "brunei": "BN", "cape verde": "CV", "swaziland": "SZ",
+    "micronesia": "FM", "democratic republic of the congo": "CD", "republic of the congo": "CG", "congo": "CG",
+    "curacao": "CW", "vatican": "VA", "saint martin": "MF", "u.s. virgin islands": "VI",
+    "british virgin islands": "VG", "reunion": "RE", "hong kong": "HK", "macao": "MO", "macau": "MO"}
+
+
+def iso2(name):
+    """Sprinklr country name -> ISO 3166 alpha-2 code, for the COUNTRY filter. None when unsure."""
+    key = str(name or "").strip().lower()
+    if key in ISO_OVERRIDES:
+        return ISO_OVERRIDES[key]
+    try:
+        import pycountry
+        return pycountry.countries.lookup(key).alpha_2
+    except Exception:
+        return None
+
+
+def all_countries(payload, s, e, label, dh):
+    """Every country row for one window. Each call returns the top 100 countries only, so the next call
+    excludes the countries already received (by ISO code) until a call comes back with fewer than 100."""
+    seen, rows_all, extra, headings = set(), [], [], None
+    for i in range(12):
+        p = with_window(payload, s, e)
+        for f in p.get("filters", []):
+            if f.get("dimensionName") == "COUNTRY" and f.get("filterType") == "NIN":
+                f["values"] = list(f.get("values") or []) + extra
+                break
+        else:
+            p["filters"].append({"dimensionName": "COUNTRY", "filterType": "NIN", "values": extra,
+                                 "details": {"type": "DIMENSION", "OLD_DIM_NAME": "COUNTRY"}})
+        headings, rows = run_payload(p, f"{label}_{i}", max_rows=CHART_CAP)
+        new = [r for r in rows if topic_value(r, dh)[0] not in seen]
+        rows_all += new
+        seen.update(topic_value(r, dh)[0] for r in rows)
+        if len(rows) < CHART_CAP:
+            return headings, rows_all
+        codes = [c for c in (iso2(topic_value(r, dh)[0]) for r in rows) if c and c not in extra]
+        if not codes:
+            print(f"  {label}: could not map the remaining country names to ISO codes; list may be incomplete")
+            return headings, rows_all
+        extra += codes
+    print(f"  {label}: stopped after 12 calls; list may be incomplete")
+    return headings, rows_all
+
+
+def country_period(role, payload, measures):
+    tmap = leader_map()
+    th, dh = heading_for(payload, "dim", "TOPIC_IDS"), heading_for(payload, "dim", "COUNTRY")
+    mh = {m: heading_for(payload, "proj", m) for m in measures}
+    wins, _ = windows()
+    out = {}
+    for per, w in wins.items():
+        s, e = w["cur"]
+        _, rows = all_countries(payload, s, e, f"{role}_{per}_cur", dh)
+        out[per] = {"cur": aggregate(rows, tmap, th, dh, mh)}
+    return out
+
+
+def h_breakdown(role, dim, measures):
+    """Dimension x Topic widgets return at most 100 rows, so run them once per leader to keep each leader's long tail.
+    Countries go further: see all_countries."""
+    def run(payload):
+        L = json.loads((ROOT / "leaders.json").read_text(encoding="utf-8"))
+        out = {}
+        for lid, v in L.items():
+            if lid.startswith("_") or not v.get("topic_id"):
+                continue
+            if dim == "COUNTRY":
+                part = country_period(f"{role}_{lid}", with_topic(payload, v["topic_id"]), measures)
+            else:
+                part = per_period(f"{role}_{lid}", with_topic(payload, v["topic_id"]), measures, extra_dim=dim, sides=("cur",))
+            for per, sides in part.items():
+                for side, agg in sides.items():
+                    out.setdefault(per, {}).setdefault(side, {}).update(agg)
+        return out
+    return run
+
+
+def quarter_start(today):
+    return today.replace(month=(today.month - 1) // 3 * 3 + 1, day=1)
+
+
+def h_daily_all(_payload):
+    """Daily mentions, reach and EMV per leader from history_start to yesterday (three widgets)."""
+    tmap = leader_map()
+    _, today = windows()
+    start = dt.datetime.fromisoformat(CFG["history_start"]).replace(tzinfo=TZ)
+    n = (today - start).days
+    fx = CFG["usd_to_aed"] if CFG["emv_currency"] == "USD" else 1.0
+    series = {lid: {"mentions": [0] * n, "reach_k": [0] * n, "ave_k": [0] * n} for lid in set(tmap.values())}
+    found = []
+    for role, key, measure, scale in [("daily_mentions", "mentions", "MENTIONS_COUNT", 1),
+                                      ("daily_reach", "reach_k", "OVERALL_REACH", 1 / 1000),
+                                      ("daily_emv", "ave_k", "EMV", fx / 1000)]:
+        payload = load_widget(role)
+        if not payload:
+            continue
+        found.append(key)
+        _, rows = run_payload(with_window(payload, start, today), role)
+        th = heading_for(payload, "dim", "TOPIC_IDS")
+        dh = next(g["heading"] for g in payload["groupBys"] if g["dimensionName"] != "TOPIC_IDS")
+        mh = heading_for(payload, "proj", measure)
+        for r in rows:
+            lid = tmap.get(topic_value(r, th)[0])
+            if not lid:
+                continue
+            dv = r.get(dh)
+            day = dt.datetime.fromtimestamp(int(float(dv)) / 1000, TZ) if str(dv).replace(".", "").isdigit() \
+                else dt.datetime.fromisoformat(str(dv)[:10]).replace(tzinfo=TZ)
+            i = (day.replace(hour=0, minute=0, second=0, microsecond=0) - start).days
+            if 0 <= i < n:
+                series[lid][key][i] += round(num(r.get(mh)) * scale)
+    return {"start": CFG["history_start"], "series": series, "measures": found}
+
+
+def leader_of(role):
+    return REG[role].get("leader")
+
+
+def h_leader_list(dim):
+    """Per-leader list widget (publications by domain, mentions by theme), run for every period."""
+    def run(payload, role):
+        wins, _ = windows()
+        dh = heading_for(payload, "dim", dim)
+        mh = heading_for(payload, "proj", "MENTIONS_COUNT")
+        zh = heading_for(payload, "proj", "MOZ_RANK")
+        out = {}
+        for per, w in wins.items():
+            s, e = w["cur"]
+            _, rows = run_payload(with_window(payload, s, e), f"{role}_{per}", max_rows=200)
+            items = []
+            for r in rows:
+                name = topic_value(r, dh)[1] or topic_value(r, dh)[0]
+                if name and name.startswith("LMN | "):  # theme names carry the theme tag prefix
+                    name = name[6:]
+                if not name or name.lower() in ("none", "null", "unknown"):
+                    continue
+                items.append({"name": name, "mentions": int(num(r.get(mh))), "moz": round(num(r.get(zh)), 1) if zh else None})
+            if not zh:  # themes: largest first; publications keep the widget's own order (Moz rank)
+                items.sort(key=lambda x: -x["mentions"])
+            out[per] = items[:10]
+        return out
+    return run
+
+
+def parse_clip(r, H, M, lid, fx):
+    msg = r.get(H.get("ES_MESSAGE_ID")) or {}
+    if not isinstance(msg, dict) or not msg.get("permalink"):
+        return None
+    title = (msg.get("title") or str(r.get(H.get("MESSAGE_CONTENT"), "")).split("\n")[0]).strip()
+    if not title or sum(title.count(ch) for ch in "ŘŮŰÃâ€") > 3:  # garbled encoding at source
+        return None
+    outlet = ""
+    for sep in (" | ", " - ", " – "):
+        if sep in title:
+            title, outlet = title.rsplit(sep, 1)[0].strip(), title.rsplit(sep, 1)[1].strip()
+            break
+    domain = str(r.get(H.get("DOMAINS"), "") or (msg.get("senderProfile") or {}).get("publisherName", ""))
+    if not outlet or len(outlet) > 40:
+        outlet = domain
+    when = dt.datetime.fromtimestamp(int(float(r.get(H.get("SN_CREATED_TIME"), 0) or 0)) / 1000, TZ)
+    return {"leader": lid, "date": when.strftime("%Y-%m-%d"), "outlet": outlet, "domain": domain,
+            "market": norm_country(r.get(H.get("COUNTRY"))), "lang": norm_lang(r.get(H.get("LST_SUPP_LNG"))),
+            "sent": sentiment_bucket(r.get(H.get("SEM_SENTIMENT"))), "topic": title[:180],
+            "reach": int(num(r.get(M.get("OVERALL_REACH")))), "ave": round(num(r.get(M.get("EMV"))) * fx),
+            "moz": round(num(r.get(M.get("MOZ_RANK"))), 1) if M.get("MOZ_RANK") else None,
+            "url": msg["permalink"], "kind": "article"}
+
+
+def h_clippings(payload, role):
+    """Top clippings for one leader in every period, in the widget's own order (Moz rank)."""
+    lid = leader_of(role)
+    wins, _ = windows()
+    H = {g["dimensionName"]: g["heading"] for g in payload["groupBys"]}
+    M = {x["measurementName"]: x["heading"] for x in payload["projections"]}
+    fx = CFG["usd_to_aed"] if CFG["emv_currency"] == "USD" else 1.0
+    out = {}
+    for per, w in wins.items():
+        s, e = w["cur"]
+        _, rows = run_payload(with_window(payload, s, e), f"{role}_{per}", max_rows=CFG.get("clips_scan_rows", 80))
+        clips, seen = [], set()
+        for r in rows:
+            c = parse_clip(r, H, M, lid, fx)
+            if not c:
+                continue
+            if c["url"] in seen:  # keep Sprinklr's order and items; drop only exact repeats of the same article
+                continue
+            seen.add(c["url"])
+            clips.append(c)
+            if len(clips) == CFG.get("clips_per_leader", 12):
+                break
+        out[per] = clips
+    return out
+
+
+HANDLERS = {
+    "topic_totals": h_topic_totals,
+    "topic_share": lambda p: per_period("topic_share", p, ["MENTIONS_COUNT"]),
+    "sentiment_topic": h_sentiment,
+    "daily_mentions": h_daily_all,  # also runs daily_reach and daily_emv
+    "country_topic": h_breakdown("country_topic", "COUNTRY", ["MENTIONS_COUNT", "EMV"]),
+    "language_topic": h_breakdown("language_topic", "LST_SUPP_LNG", ["MENTIONS_COUNT"]),
+    "source_topic": h_breakdown("source_topic", "LISTENING_MEDIA_TYPE", ["MENTIONS_COUNT"]),
+}
+PER_LEADER = {"publications_": h_leader_list("DOMAINS"), "themes_": h_leader_list("LST_THEME"), "clippings_": h_clippings}
+SKIP = {"daily_reach", "daily_emv"}  # run inside the daily_mentions handler
+
+
+def handler_for(role):
+    if role in HANDLERS:
+        return lambda p: HANDLERS[role](p)
+    for prefix, fn in PER_LEADER.items():
+        if role.startswith(prefix):
+            return lambda p, fn=fn: fn(p, role)
+    return None
+
+
+def sentiment_bucket(label):
+    l = str(label).lower()
+    if l.startswith("pos") or l in ("1", "positive"):
+        return "pos"
+    if l.startswith("neg") or l in ("-1", "negative"):
+        return "neg"
+    return "neu"
+
+
+# Sprinklr labels -> the names the dashboard uses (flags, icons, Arabic/English split)
+COUNTRY = {"united arab emirates": "UAE", "uae": "UAE", "ae": "UAE", "saudi arabia": "Saudi Arabia", "sa": "Saudi Arabia",
+           "kingdom of saudi arabia": "Saudi Arabia", "united kingdom": "United Kingdom", "gb": "United Kingdom", "uk": "United Kingdom",
+           "united states": "United States", "united states of america": "United States", "us": "United States", "usa": "United States",
+           "india": "India", "in": "India", "china": "China", "cn": "China", "france": "France", "fr": "France", "germany": "Germany",
+           "de": "Germany", "egypt": "Egypt", "eg": "Egypt", "kuwait": "Kuwait", "kw": "Kuwait", "qatar": "Qatar", "qa": "Qatar",
+           "italy": "Italy", "it": "Italy", "spain": "Spain", "es": "Spain", "japan": "Japan", "jp": "Japan", "russia": "Russia",
+           "russian federation": "Russia", "ru": "Russia"}
+LANG = {"ar": "Arabic", "arabic": "Arabic", "en": "English", "english": "English", "fr": "French", "french": "French",
+        "zh": "Chinese", "chinese": "Chinese", "es": "Spanish", "spanish": "Spanish", "de": "German", "german": "German",
+        "ru": "Russian", "russian": "Russian", "it": "Italian", "italian": "Italian", "pt": "Portuguese", "portuguese": "Portuguese",
+        "ja": "Japanese", "japanese": "Japanese", "hi": "Hindi", "hindi": "Hindi"}
+CHANNEL = {"news": "Online news", "print": "Print", "newspaper": "Print", "magazine": "Print", "tv": "Broadcast",
+           "broadcast": "Broadcast", "radio": "Broadcast", "blogs": "Blogs and forums", "blog": "Blogs and forums",
+           "forums": "Blogs and forums", "forum": "Blogs and forums", "message_boards": "Blogs and forums",
+           "podcasts": "Podcasts", "podcast": "Podcasts"}
+CHANNELS = ["Online news", "Print", "Broadcast", "Social", "Blogs and forums", "Podcasts"]
+
+
+def norm_country(v):
+    key = str(v or "").strip().lower()
+    if key in ("", "unknown", "none", "null", "n/a"):
+        return "Unknown"
+    return COUNTRY.get(key, str(v).strip())
+
+
+def norm_lang(v):
+    key = str(v).split("(")[0].strip().lower()  # Sprinklr returns e.g. "Arabic (العربية)"
+    return LANG.get(key, key.title() if key and key not in ("unknown", "none", "null") else "Other")
+
+
+def norm_channel(v):
+    return CHANNEL.get(str(v).strip().lower(), "Social")  # every social network falls under Social
+
+
+def regroup(agg, fn):
+    out = {}
+    for lid, d in agg.items():
+        for k, v in d.items():
+            slot = out.setdefault(lid, {}).setdefault(fn(k), {})
+            for m, x in v.items():
+                slot[m] = slot.get(m, 0.0) + x
+    return out
+
+
+def merge(data, results, checks):
+    fx = CFG["usd_to_aed"] if CFG["emv_currency"] == "USD" else 1.0
+    meta = data.setdefault("meta", {})
+    sections = meta["sections"] = {}  # rebuilt on every run from what was actually fetched
+    leaders = [l["id"] for l in data["leaders"]]
+    wins, _ = windows()
+    day = lambda x: x.strftime("%Y-%m-%d")
+
+    if "topic_totals" in results:
+        totals = {}
+        for per, sides in results["topic_totals"].items():
+            totals[per] = {}
+            for side, agg in sides.items():
+                totals[per][side] = {lid: {
+                    "mentions": int(agg.get(lid, {}).get("MENTIONS_COUNT", 0)),
+                    "reach": int(agg.get(lid, {}).get("OVERALL_REACH", 0)),
+                    "ave_aed": round(agg.get(lid, {}).get("EMV", 0) * fx),
+                    "domains": int(agg.get(lid, {}).get("DISTINCT_DOMAIN_COUNT", 0))} for lid in leaders}
+        data["totals"] = totals
+        data["totals_windows"] = {per: {side: [day(x), day(y - dt.timedelta(days=1))] for side, (x, y) in w.items()} for per, w in wins.items()}
+        sections["cards"] = sections["sov"] = "live"
+
+    if "sentiment_topic" in results:
+        for per, sides in results["sentiment_topic"].items():
+            for side, agg in sides.items():
+                for lid in leaders:
+                    b = {"pos": 0, "neu": 0, "neg": 0}
+                    for lab, v in agg.get(lid, {}).items():
+                        b[sentiment_bucket(lab)] += int(v["MENTIONS_COUNT"])
+                    data.setdefault("totals", {}).setdefault(per, {}).setdefault(side, {}).setdefault(lid, {}).update(b)
+        sections["sentiment"] = "live"
+
+    if "daily_mentions" in results and "mentions" in results["daily_mentions"]["measures"]:
+        d = results["daily_mentions"]
+        meta["start"] = d["start"]
+        for lid, s in d["series"].items():
+            old = data["series"].get(lid, {})
+            om = sum(old.get("mentions", [])) or 1
+            ratio = {k: sum(old.get(k, [])) / om for k in ("pos", "neg")}  # daily sentiment is not in the widgets
+            s.update({k: [round(m * ratio[k]) for m in s["mentions"]] for k in ("pos", "neg")})
+            s["neu"] = [m - p - n for m, p, n in zip(s["mentions"], s["pos"], s["neg"])]
+            data["series"][lid] = s
+        sections["trend"] = "live"
+
+    def shares(agg, fn=None, top=None, measure="MENTIONS_COUNT", drop=None, counts=False):
+        if fn:
+            agg = regroup(agg, fn)
+        dropped = {}
+        if drop:
+            for lid in leaders:
+                d0 = agg.get(lid, {})
+                all_ = sum(v.get(measure, 0) for v in d0.values()) or 1
+                dropped[lid] = round(d0.pop(drop, {}).get(measure, 0) / all_, 4)
+        names = sorted({k for lid in leaders for k in agg.get(lid, {}) if k != "Other"},
+                       key=lambda k: -sum(agg.get(l, {}).get(k, {}).get(measure, 0) for l in leaders))
+        if top and len(names) > top:
+            for lid in leaders:
+                dd = agg.setdefault(lid, {})
+                o = dd.setdefault("Other", {})
+                for k in names[top:]:
+                    for m, x in dd.pop(k, {}).items():
+                        o[m] = o.get(m, 0.0) + x
+            names = names[:top]
+        names.append("Other")
+        share = {}
+        for lid in leaders:
+            tot = sum(agg.get(lid, {}).get(k, {}).get(measure, 0) for k in names) or 1
+            share[lid] = [round(agg.get(lid, {}).get(k, {}).get(measure, 0) / tot, 4) for k in names]
+        out = {"names": names, "share": share}
+        if counts:  # raw mention counts, one per name, same order
+            out["counts"] = {lid: [int(round(agg.get(lid, {}).get(k, {}).get(measure, 0))) for k in names] for lid in leaders}
+        if drop:
+            out["unknown_share"] = dropped
+        return out
+
+    bd = {}
+    if "country_topic" in results:
+        for per, sides in results["country_topic"].items():
+            bd.setdefault(per, {})["markets"] = shares(sides["cur"], norm_country, top=None, drop="Unknown", counts=True)
+        sections["markets"] = "live"
+    if "language_topic" in results:
+        for per, sides in results["language_topic"].items():
+            bd.setdefault(per, {})["languages"] = shares(sides["cur"], norm_lang, top=11)
+        sections["languages"] = "live"
+    t1 = set(CFG.get("tier1_domains", []))
+    pub_roles = [r for r in results if r.startswith("publications_")]
+    for role in pub_roles:
+        lid = leader_of(role)
+        for per, items in results[role].items():
+            total = sum(x["mentions"] for x in items) or 1
+            bd.setdefault(per, {}).setdefault("publications", {})[lid] = [
+                {"name": x["name"], "share": round(x["mentions"] / total, 4), "mentions": x["mentions"], "moz": x["moz"],
+                 "tier": 1 if x["name"].lower().replace("www.", "") in t1 else 2, "market": "", "lang": "", "net": None} for x in items]
+    if len(pub_roles) == len(leaders):
+        sections["publications"] = "live"
+    theme_roles = [r for r in results if r.startswith("themes_")]
+    for role in theme_roles:
+        lid = leader_of(role)
+        for per, items in results[role].items():
+            top = items[0]["mentions"] if items else 1
+            bd.setdefault(per, {}).setdefault("topics", {})[lid] = [{"t": x["name"], "w": round(x["mentions"] / top * 100) if top else 0, "n": x["mentions"]} for x in items]
+    if len(theme_roles) == len(leaders):
+        sections["themes"] = "live"
+    if "source_topic" in results:
+        for per, sides in results["source_topic"].items():
+            bd.setdefault(per, {})["channels"] = shares(sides["cur"], None, top=7)  # Sprinklr's own source names
+        sections["media"] = "live"
+    clip_roles = [r for r in results if r.startswith("clippings_")]
+    for role in clip_roles:
+        for per, items in results[role].items():
+            bd.setdefault(per, {}).setdefault("clips", []).extend(items)
+    if len(clip_roles) == len(leaders):
+        sections["clippings"] = "live"
+    if bd:
+        data["breakdowns"] = bd
+
+    # payloads, so the dashboard's data checkpoint can show each one
+    data["payloads"] = {role: {"title": w.get("title", role), "edited": w.get("edited"), "feeds": w.get("feeds", []),
+                               "note": w.get("note", ""), "json": load_widget(role)} for role, w in REG.items() if load_widget(role)}
+
+    meta["generated"] = dt.datetime.now(TZ).isoformat(timespec="seconds")
+    meta["widgets_live"] = sorted(results)
+    tw = load_widget("topic_totals") or {}
+    mt = next((f["values"] for f in tw.get("filters", []) if f.get("dimensionName") == "LISTENING_MEDIA_TYPE"), None)
+    meta["source_filter"] = ", ".join(v.title() for v in mt) if mt else "All sources"
+    meta["placeholder"] = not all(sections.get(k) == "live" for k in
+                                  ["cards", "sov", "trend", "sentiment", "markets", "languages", "media", "publications", "themes", "clippings"])
+    meta["checks"] = checks
+    return data
+
+
+def run_checks(results):
+    msgs, ok = [], True
+    tt = results.get("topic_totals")
+    if tt:
+        for per, sides in tt.items():
+            m = {lid: v.get("MENTIONS_COUNT", 0) for lid, v in sides["cur"].items()}
+            if len(m) < 3:
+                ok = False
+                msgs.append(f"{per}: only {len(m)} of 3 leaders returned data - check leaders.json topic IDs")
+            if any(v <= 0 for v in m.values()):
+                msgs.append(f"{per}: a leader has zero mentions")
+        ts = results.get("topic_share")
+        if ts and "30D" in ts and "30D" in tt:
+            for lid, v in ts["30D"]["cur"].items():
+                a, b = v.get("MENTIONS_COUNT", 0), tt["30D"]["cur"].get(lid, {}).get("MENTIONS_COUNT", 0)
+                if b and abs(a - b) / b > 0.02:
+                    msgs.append(f"30D {lid}: share-of-voice widget {a:.0f} vs totals widget {b:.0f} mentions (over 2% apart)")
+        msgs.append("30D mentions: " + ", ".join(f"{lid} {v.get('MENTIONS_COUNT', 0):,.0f}" for lid, v in tt.get("30D", {}).get("cur", {}).items()))
+    st = results.get("sentiment_topic")
+    if st and "30D" in st:
+        parts = []
+        for lid, labs in st["30D"]["cur"].items():
+            bkt = {"pos": 0, "neu": 0, "neg": 0}
+            for lab, v in labs.items():
+                bkt[sentiment_bucket(lab)] += v["MENTIONS_COUNT"]
+            tot = sum(bkt.values())
+            parts.append(f"{lid} {bkt['neg'] / tot * 100:.1f}%" if tot else f"{lid} n/a")
+        msgs.append("30D negative sentiment: " + ", ".join(parts))
+    dm = results.get("daily_mentions")
+    if dm and tt and "30D" in tt:
+        wins, today = windows()
+        start = dt.datetime.fromisoformat(CFG["history_start"]).replace(tzinfo=TZ)
+        i0 = (wins["30D"]["cur"][0] - start).days
+        for lid, s in dm["series"].items():
+            daily = sum(s["mentions"][i0:])
+            tot = tt["30D"]["cur"].get(lid, {}).get("MENTIONS_COUNT", 0)
+            flag = "" if tot and abs(daily - tot) / tot <= 0.02 else "  <- differs"
+            msgs.append(f"30D {lid}: daily widget sum {daily:,} vs totals {tot:,.0f}{flag}")
+    return ok, msgs
+
+
+# ---------------------------------------------------------------- commands
+def cmd_token(_):
+    access_token(force=True)
+    t = json.loads(TOKENS.read_text(encoding="utf-8"))
+    print(f'Access token valid until {dt.datetime.fromtimestamp(t["expires_at"], TZ):%d %B %Y %H:%M} ({CFG["timezone"]}).')
+
+
+def cmd_discover(_):
+    wins, _ = windows()
+    s, e = wins["30D"]["cur"]
+    seen = {}
+    for role, w in REG.items():
+        payload = load_widget(role)
+        if not payload:
+            continue
+        heads, rows = run_payload(with_window(payload, s, e), f"discover_{role}")
+        print(f"\n== {role}: {len(rows)} rows, headings {heads}")
+        for r in rows[:8]:
+            print("  ", json.dumps(r, ensure_ascii=False)[:300])
+        th = heading_for(payload, "dim", "TOPIC_IDS")
+        for r in rows:
+            tid, name = topic_value(r, th)
+            seen.setdefault(tid, name)
+    L = json.loads((ROOT / "leaders.json").read_text(encoding="utf-8"))
+    print("\nTopics returned under the widget filters (30 days):")
+    for tid, name in seen.items():
+        guess = next((lid for lid, v in L.items() if not lid.startswith("_") and name and any(k in name.lower() for k in v["match"])), "")
+        print(f"  {tid}  {name or '(name not resolved - check raw/discover_*.json)'}  {('-> ' + guess) if guess else ''}")
+    print("\nPut each leader's topic ID(s) into leaders.json, then run: python sprinklr_refresh.py build --dry-run")
+
+
+def cmd_build(a):
+    if not leader_map():
+        sys.exit("leaders.json has no topic IDs yet. Run: python sprinklr_refresh.py discover")
+    results = {}
+    for role in REG:
+        if role in SKIP:
+            continue
+        payload = load_widget(role)
+        h = handler_for(role)
+        if not payload or not h:
+            print(f"- {role}: {'no payload yet' if not payload else 'no handler'} (section stays sample)")
+            continue
+        print(f"- {role}: fetching")
+        results[role] = h(payload)
+    ok, msgs = run_checks(results)
+    print("\nChecks:\n  " + "\n  ".join(msgs or ["no checks ran"]))
+    if not ok:
+        sys.exit("Checks failed: data.json not written.")
+    path = (ROOT / CFG["data_json"]).resolve()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data = merge(data, results, msgs)
+    live = [k for k, v in data["meta"]["sections"].items() if v == "live"]
+    print(f"\nLive sections: {', '.join(live) or 'none'}")
+    if a.dry_run:
+        print("Dry run: data.json not written.")
+        return
+    path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"Wrote {path}")
+
+
+def main():
+    global ACCESS_OVERRIDE
+    load_env()
+    ap = argparse.ArgumentParser(description="Leadership Media Monitor - Sprinklr refresh")
+    ap.add_argument("command", choices=["token", "discover", "build"])
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--access-token", help="use this access token and do not refresh")
+    a = ap.parse_args()
+    ACCESS_OVERRIDE = a.access_token
+    {"token": cmd_token, "discover": cmd_discover, "build": cmd_build}[a.command](a)
+
+
+if __name__ == "__main__":
+    main()
