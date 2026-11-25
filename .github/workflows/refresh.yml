@@ -4,8 +4,8 @@ name: Sprinklr refresh
 # 10 to 20 minutes late, so this leaves time before Claude publishes at 08:45 and 15:45.
 on:
   schedule:
-    - cron: "15 4 * * *"
-    - cron: "15 11 * * *"
+    - cron: "37 3 * * *"
+    - cron: "37 10 * * *"
   workflow_dispatch: {}
 
 permissions:
