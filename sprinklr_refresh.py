@@ -21,7 +21,7 @@ Do not refresh with the same API key anywhere else.
 
 Standard library only (Python 3.9 or later).
 """
-import argparse, copy, datetime as dt, json, os, pathlib, sys, time
+import argparse, copy, datetime as dt, json, os, pathlib, re, sys, time
 import urllib.error, urllib.parse, urllib.request
 from zoneinfo import ZoneInfo
 
@@ -480,6 +480,72 @@ def h_clippings(payload, role):
     return out
 
 
+def _plain(v):
+    """Lower-case letters and digits only, for comparing an author with a domain."""
+    return re.sub(r"[^a-z0-9]", "", str(v or "").lower())
+
+
+def author_name(v):
+    """FROM_SN_USER can come resolved as a profile dict or as a plain string."""
+    if isinstance(v, dict):
+        for k in ("name", "displayName", "screenName", "fullName", "userName"):
+            if v.get(k):
+                return str(v[k]).strip()
+        return str((v.get("contactInfo") or {}).get("fullName") or "").strip()
+    return str(v or "").strip()
+
+
+def is_outlet_itself(author, domain):
+    """True when the 'author' is just the publication (e.g. apnews.com on apnews.com)."""
+    a = str(author).lower().strip()
+    a = re.sub(r"^https?://", "", a).removeprefix("www.").rstrip("/")
+    d = re.sub(r"^https?://", "", str(domain or "").lower().strip()).removeprefix("www.").rstrip("/")
+    if not a or not d:
+        return False
+    return a == d or _plain(a) == _plain(d) or _plain(a) == _plain(d.split(".")[0])
+
+
+def h_authors(payload, role):
+    """Top authors for one leader in every period: one row per author (no duplicates across sentiment or
+    outlets), Sprinklr's order (Moz rank), authors that are only the outlet's own name left out."""
+    wins, _ = windows()
+    dh = heading_for(payload, "dim", "DOMAINS")
+    uh = heading_for(payload, "dim", "FROM_SN_USER")
+    sh = heading_for(payload, "dim", "SEM_SENTIMENT")
+    mh = heading_for(payload, "proj", "MENTIONS_COUNT")
+    zh = heading_for(payload, "proj", "MOZ_RANK")
+    out = {}
+    for per, w in wins.items():
+        s, e = w["cur"]
+        _, rows = run_payload(with_window(payload, s, e), f"{role}_{per}", max_rows=CFG.get("authors_scan_rows", 300))
+        by, order = {}, []
+        for r in rows:
+            name = author_name(r.get(uh))
+            domain = str(topic_value(r, dh)[1] or topic_value(r, dh)[0] or "").strip()
+            if not name or name.lower() in ("none", "null", "unknown", "anonymous") or is_outlet_itself(name, domain):
+                continue
+            key = " ".join(name.lower().split())
+            a = by.get(key)
+            if not a:
+                a = by[key] = {"name": name, "outlets": {}, "mentions": 0, "pos": 0, "neu": 0, "neg": 0,
+                               "moz": round(num(r.get(zh)), 1) if zh else None}
+                order.append(key)
+            n = int(num(r.get(mh)))
+            a["mentions"] += n
+            a[sentiment_bucket(r.get(sh))] += n
+            if domain and domain.lower() not in ("none", "null", "unknown"):
+                a["outlets"][domain] = a["outlets"].get(domain, 0) + n
+        items = []
+        for key in order[:CFG.get("authors_per_leader", 10)]:
+            a = by[key]
+            outs = sorted(a["outlets"].items(), key=lambda x: -x[1])
+            a["outlet"] = outs[0][0] if outs else ""
+            a["outlets"] = [o for o, _ in outs]
+            items.append(a)
+        out[per] = items
+    return out
+
+
 HANDLERS = {
     "topic_totals": h_topic_totals,
     "topic_share": lambda p: per_period("topic_share", p, ["MENTIONS_COUNT"]),
@@ -489,7 +555,7 @@ HANDLERS = {
     "language_topic": h_breakdown("language_topic", "LST_SUPP_LNG", ["MENTIONS_COUNT"]),
     "source_topic": h_breakdown("source_topic", "LISTENING_MEDIA_TYPE", ["MENTIONS_COUNT"]),
 }
-PER_LEADER = {"publications_": h_leader_list("DOMAINS"), "themes_": h_leader_list("LST_THEME"), "clippings_": h_clippings}
+PER_LEADER = {"publications_": h_leader_list("DOMAINS"), "themes_": h_leader_list("LST_THEME"), "clippings_": h_clippings, "authors_": h_authors}
 SKIP = {"daily_reach", "daily_emv"}  # run inside the daily_mentions handler
 
 
@@ -669,6 +735,13 @@ def merge(data, results, checks):
             bd.setdefault(per, {}).setdefault("clips", []).extend(items)
     if len(clip_roles) == len(leaders):
         sections["clippings"] = "live"
+    author_roles = [r for r in results if r.startswith("authors_")]
+    for role in author_roles:
+        lid = leader_of(role)
+        for per, items in results[role].items():
+            bd.setdefault(per, {}).setdefault("authors", {})[lid] = items
+    if len(author_roles) == len(leaders):
+        sections["authors"] = "live"
     if bd:
         data["breakdowns"] = bd
 
@@ -682,7 +755,7 @@ def merge(data, results, checks):
     mt = next((f["values"] for f in tw.get("filters", []) if f.get("dimensionName") == "LISTENING_MEDIA_TYPE"), None)
     meta["source_filter"] = ", ".join(v.title() for v in mt) if mt else "All sources"
     meta["placeholder"] = not all(sections.get(k) == "live" for k in
-                                  ["cards", "sov", "trend", "sentiment", "markets", "languages", "media", "publications", "themes", "clippings"])
+                                  ["cards", "sov", "trend", "sentiment", "markets", "languages", "media", "publications", "themes", "clippings", "authors"])
     meta["checks"] = checks
     return data
 
@@ -725,6 +798,11 @@ def run_checks(results):
             tot = tt["30D"]["cur"].get(lid, {}).get("MENTIONS_COUNT", 0)
             flag = "" if tot and abs(daily - tot) / tot <= 0.02 else "  <- differs"
             msgs.append(f"30D {lid}: daily widget sum {daily:,} vs totals {tot:,.0f}{flag}")
+    for lid in ("mkm", "kkm", "saj"):
+        au = (results.get(f"authors_{lid}") or {}).get("30D")
+        if au is not None:
+            ids = sum(1 for a in au if " " not in a["name"] and len(a["name"]) >= 20)
+            msgs.append(f"30D {lid}: {len(au)} top authors" + ("  <- names look like profile IDs, check FROM_SN_USER" if au and ids > len(au) / 2 else ""))
     return ok, msgs
 
 

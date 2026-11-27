@@ -210,6 +210,45 @@
       "status": "received",
       "edited": "2026-11-24",
       "run": "per period: 7D, 30D, 90D, YTD"
+    },
+    "authors_mkm": {
+      "title": "Top authors - Mohamed Al Mubarak",
+      "feeds": [
+        "authors"
+      ],
+      "leader": "mkm",
+      "needs": "Domain, author and sentiment; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs, excluding LMN Exclusions. Sorted by Moz rank.",
+      "file": "widgets/authors_mkm.json",
+      "status": "received",
+      "edited": "2026-11-27",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "note": "One row per author: sentiment rows and outlets are merged; authors that are only the outlet's own name are left out."
+    },
+    "authors_kkm": {
+      "title": "Top authors - Khaldoon Al Mubarak",
+      "feeds": [
+        "authors"
+      ],
+      "leader": "kkm",
+      "needs": "Domain, author and sentiment; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs, excluding LMN Exclusions. Sorted by Moz rank.",
+      "file": "widgets/authors_kkm.json",
+      "status": "received",
+      "edited": "2026-11-27",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "note": "One row per author: sentiment rows and outlets are merged; authors that are only the outlet's own name are left out."
+    },
+    "authors_saj": {
+      "title": "Top authors - Dr Sultan Al Jaber",
+      "feeds": [
+        "authors"
+      ],
+      "leader": "saj",
+      "needs": "Domain, author and sentiment; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs, excluding LMN Exclusions. Sorted by Moz rank.",
+      "file": "widgets/authors_saj.json",
+      "status": "received",
+      "edited": "2026-11-27",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "note": "One row per author: sentiment rows and outlets are merged; authors that are only the outlet's own name are left out."
     }
   }
 }

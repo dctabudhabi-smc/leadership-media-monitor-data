@@ -57,5 +57,7 @@
   ],
   "clips_per_leader": 12,
   "clips_scan_rows": 80,
-  "include_today": true
+  "include_today": true,
+  "authors_per_leader": 10,
+  "authors_scan_rows": 300
 }
