@@ -492,7 +492,10 @@ def author_name(v):
         n = n or str((v.get("contactInfo") or {}).get("fullName") or "")
     else:
         n = str(v or "")
-    n = re.sub(r"^\s*by\s+", "", n.strip(), flags=re.I)
+    n = re.sub(r"^\s*(by|\u0645\u0646 \u0642\u0628\u0644|\u0628\u0642\u0644\u0645)\s+", "", n.strip(), flags=re.I)  # By, Arabic "by"
+    parts = n.split(" - ", 1)
+    if len(parts) == 2 and parts[1].strip() and len(parts[0].split()) <= 2:  # dateline first: "Abu Dhabi - Name"
+        n = parts[1]
     n = re.sub(r",\s*live updates?\s*$", "", n, flags=re.I)
     return n.strip(" |-\u2013\u00bb\u00ab").strip()
 
@@ -507,7 +510,11 @@ def is_outlet_itself(author, domain):
     a = _plain(re.sub(r"^https?://|^www\.", "", str(author).lower().strip()))
     if not a or str(author).strip().lower() in NOT_PEOPLE:
         return True
+    if re.search(r"[:\d@/]", str(author)) or len(str(author).split()) > 8:  # headlines or scraping errors, not bylines
+        return True
     if any(_plain(x) == a for x in CFG.get("author_exclude", [])):
+        return True
+    if any(a.startswith(_plain(x)) for x in CFG.get("author_exclude_prefix", []) if _plain(x)):
         return True
     d = re.sub(r"^https?://", "", str(domain or "").lower().strip()).removeprefix("www.").rstrip("/")
     if not d:
@@ -522,6 +529,8 @@ def is_outlet_itself(author, domain):
         if len(lab) >= 6 and lab in a:        # Tech - Economic Times on economictimes.indiatimes.com
             return True
         if len(a) >= 3 and lab.startswith(a2):  # ANI on aninews.in
+            return True
+        if a2.startswith(lab):  # BBC Monitoring on bbc.co.uk
             return True
     return False
 

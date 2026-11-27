@@ -69,7 +69,24 @@
     "زهرة الخليج",
     "Chandigarh Tribune",
     "The Global Arabic News Service",
-    "الشرق الأوسط لندن"
+    "الشرق الأوسط لندن",
+    "The Associated Press",
+    "Associated Press",
+    "AP",
+    "Reuters",
+    "AFP",
+    "Agence France-Presse",
+    "Bloomberg",
+    "PTI",
+    "IANS",
+    "Xinhua",
+    "My Say",
+    "Staff Reporter",
+    "Our Correspondent"
   ],
-  "_author_exclude_note": "Bylines that are an agency or publication, not a person. Add names here to hide them from Top authors."
+  "_author_exclude_note": "Bylines that are an agency or publication, not a person. author_exclude hides exact names; author_exclude_prefix hides any byline starting with that text (for example Asharq Al-Awsat datelines).",
+  "author_exclude_prefix": [
+    "الشرق الأوسط",
+    "BBC Monitoring"
+  ]
 }
