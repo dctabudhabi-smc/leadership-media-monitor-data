@@ -59,5 +59,17 @@
   "clips_scan_rows": 80,
   "include_today": true,
   "authors_per_leader": 10,
-  "authors_scan_rows": 300
+  "authors_scan_rows": 300,
+  "author_exclude": [
+    "Emirates News Agency",
+    "WAM",
+    "وكالة أنباء الإمارات",
+    "وام",
+    "البيان",
+    "زهرة الخليج",
+    "Chandigarh Tribune",
+    "The Global Arabic News Service",
+    "الشرق الأوسط لندن"
+  ],
+  "_author_exclude_note": "Bylines that are an agency or publication, not a person. Add names here to hide them from Top authors."
 }

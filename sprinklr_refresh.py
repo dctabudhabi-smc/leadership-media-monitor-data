@@ -481,28 +481,49 @@ def h_clippings(payload, role):
 
 
 def _plain(v):
-    """Lower-case letters and digits only, for comparing an author with a domain."""
-    return re.sub(r"[^a-z0-9]", "", str(v or "").lower())
+    """Lower-case letters and digits only (Arabic letters kept), for comparing an author with a domain."""
+    return re.sub(r"[^a-z0-9\u0600-\u06ff]", "", str(v or "").lower())
 
 
 def author_name(v):
-    """FROM_SN_USER can come resolved as a profile dict or as a plain string."""
+    """FROM_SN_USER can come resolved as a profile dict or as a plain string; tidy byline noise."""
     if isinstance(v, dict):
-        for k in ("name", "displayName", "screenName", "fullName", "userName"):
-            if v.get(k):
-                return str(v[k]).strip()
-        return str((v.get("contactInfo") or {}).get("fullName") or "").strip()
-    return str(v or "").strip()
+        n = next((str(v[k]) for k in ("name", "displayName", "screenName", "fullName", "userName") if v.get(k)), "")
+        n = n or str((v.get("contactInfo") or {}).get("fullName") or "")
+    else:
+        n = str(v or "")
+    n = re.sub(r"^\s*by\s+", "", n.strip(), flags=re.I)
+    n = re.sub(r",\s*live updates?\s*$", "", n, flags=re.I)
+    return n.strip(" |-\u2013\u00bb\u00ab").strip()
+
+
+NOT_PEOPLE = {"anonymous", "anonymous user", "unknown", "none", "null", "admin", "administrator", "staff", "editor", "web desk", "news desk"}
+GENERIC_LABELS = {"www", "com", "co", "net", "org", "gov", "edu", "news", "ae", "uk", "in", "us", "cn", "sa", "qa", "eg", "fr", "de"}
 
 
 def is_outlet_itself(author, domain):
-    """True when the 'author' is just the publication (e.g. apnews.com on apnews.com)."""
-    a = str(author).lower().strip()
-    a = re.sub(r"^https?://", "", a).removeprefix("www.").rstrip("/")
+    """True when the 'author' is just the publication or agency (apnews.com on apnews.com, The Gulf Today on
+    gulftoday.ae, Asianet News on newsable.asianetnews.com, ANI on aninews.in), or is on the exclusion list."""
+    a = _plain(re.sub(r"^https?://|^www\.", "", str(author).lower().strip()))
+    if not a or str(author).strip().lower() in NOT_PEOPLE:
+        return True
+    if any(_plain(x) == a for x in CFG.get("author_exclude", [])):
+        return True
     d = re.sub(r"^https?://", "", str(domain or "").lower().strip()).removeprefix("www.").rstrip("/")
-    if not a or not d:
+    if not d:
         return False
-    return a == d or _plain(a) == _plain(d) or _plain(a) == _plain(d.split(".")[0])
+    if a == _plain(d):
+        return True
+    a2 = a[3:] if a.startswith("the") else a
+    for lab in (x for x in d.split(".") if x not in GENERIC_LABELS and len(x) >= 3):
+        lab = _plain(lab)
+        if a in (lab,) or a2 == lab:
+            return True
+        if len(lab) >= 6 and lab in a:        # Tech - Economic Times on economictimes.indiatimes.com
+            return True
+        if len(a) >= 3 and lab.startswith(a2):  # ANI on aninews.in
+            return True
+    return False
 
 
 def h_authors(payload, role):
@@ -522,7 +543,7 @@ def h_authors(payload, role):
         for r in rows:
             name = author_name(r.get(uh))
             domain = str(topic_value(r, dh)[1] or topic_value(r, dh)[0] or "").strip()
-            if not name or name.lower() in ("none", "null", "unknown", "anonymous") or is_outlet_itself(name, domain):
+            if not name or is_outlet_itself(name, domain):
                 continue
             key = " ".join(name.lower().split())
             a = by.get(key)
