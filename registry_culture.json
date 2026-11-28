@@ -1,0 +1,235 @@
+{
+  "_how_it_works": "Culture comparison widgets (Mohamed's culture-only topic, Bodour Al Qasimi, Al-Mayassa Al Thani). Same roles as registry.json; files in widgets_culture/.",
+  "widgets": {
+    "topic_totals": {
+      "title": "Mentions, potential reach, media value (Culture)",
+      "feeds": [
+        "cards"
+      ],
+      "needs": "Topic; Mentions, Overall reach (shown as potential reach), Reach count, EMV. All sources.",
+      "file": "widgets_culture/topic_totals.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD with comparison periods",
+      "note": "Sent with topic tag Plain; the refresh reads the three culture topics by ID, so the tag does not change the result."
+    },
+    "topic_share": {
+      "title": "Share of voice (Culture)",
+      "feeds": [
+        "sov"
+      ],
+      "needs": "Topic; Mentions. All sources. Cross-checks the totals.",
+      "file": "widgets_culture/topic_share.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD with comparison periods",
+      "note": "Sent with topic tag Plain; the refresh reads the three culture topics by ID, so the tag does not change the result."
+    },
+    "publications_mkm": {
+      "title": "Top publications - Mohamed Al Mubarak (culture)",
+      "feeds": [
+        "publications"
+      ],
+      "needs": "Domain; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs.",
+      "file": "widgets_culture/publications_mkm.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "mkm",
+      "note": "Mohamed's culture-only topic."
+    },
+    "publications_cul1": {
+      "title": "Top publications - Bodour Al Qasimi",
+      "feeds": [
+        "publications"
+      ],
+      "needs": "Domain; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs.",
+      "file": "widgets_culture/publications_cul1.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "cul1"
+    },
+    "publications_cul2": {
+      "title": "Top publications - Al-Mayassa Al Thani",
+      "feeds": [
+        "publications"
+      ],
+      "needs": "Domain; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs.",
+      "file": "widgets_culture/publications_cul2.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "cul2",
+      "note": "Sent with Bodour Al Qasimi's topic ID; corrected to Al-Mayassa Al Thani's topic ID (as in her clippings, authors and themes widgets)."
+    },
+    "language_topic": {
+      "title": "Coverage by language (Culture)",
+      "feeds": [
+        "languages"
+      ],
+      "needs": "Language and Topic; Mentions.",
+      "file": "widgets_culture/language_topic.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "note": "Sent with topic tag Plain; the refresh reads the three culture topics by ID, so the tag does not change the result."
+    },
+    "daily_mentions": {
+      "title": "Mentions over time (Culture)",
+      "feeds": [
+        "trend"
+      ],
+      "needs": "Date (daily) and Topic; Mentions.",
+      "file": "widgets_culture/daily_mentions.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "once, from history_start to yesterday",
+      "note": "Sent with topic tag Plain; the refresh reads the three culture topics by ID, so the tag does not change the result."
+    },
+    "daily_reach": {
+      "title": "Reach over time (Culture)",
+      "feeds": [
+        "trend"
+      ],
+      "needs": "Date (daily) and Topic; Overall reach.",
+      "file": "widgets_culture/daily_reach.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "once, from history_start to yesterday",
+      "note": "Sent with topic tag Plain; the refresh reads the three culture topics by ID, so the tag does not change the result."
+    },
+    "daily_emv": {
+      "title": "EMV over time (Culture)",
+      "feeds": [
+        "trend"
+      ],
+      "needs": "Date (daily) and Topic; EMV.",
+      "file": "widgets_culture/daily_emv.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "once, from history_start to yesterday",
+      "note": "Sent with topic tag Plain; the refresh reads the three culture topics by ID, so the tag does not change the result."
+    },
+    "sentiment_topic": {
+      "title": "Sentiment (Culture)",
+      "feeds": [
+        "sentiment"
+      ],
+      "needs": "Topic and Sentiment, uncategorised excluded; Mentions.",
+      "file": "widgets_culture/sentiment_topic.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD with comparison periods",
+      "note": "Sent with topic tag Plain; the refresh reads the three culture topics by ID, so the tag does not change the result."
+    },
+    "clippings_mkm": {
+      "title": "Clippings - Mohamed Al Mubarak (culture)",
+      "feeds": [
+        "clippings"
+      ],
+      "needs": "Message, date, domain, country, language, content, sentiment; Overall reach, Moz rank. Sorted by Moz rank.",
+      "file": "widgets_culture/clippings_mkm.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "mkm"
+    },
+    "clippings_cul1": {
+      "title": "Clippings - Bodour Al Qasimi",
+      "feeds": [
+        "clippings"
+      ],
+      "needs": "Message, date, domain, country, language, content, sentiment; Overall reach, Moz rank. Sorted by Moz rank.",
+      "file": "widgets_culture/clippings_cul1.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "cul1"
+    },
+    "clippings_cul2": {
+      "title": "Clippings - Al-Mayassa Al Thani",
+      "feeds": [
+        "clippings"
+      ],
+      "needs": "Message, date, domain, country, language, content, sentiment; Overall reach, Moz rank. Sorted by Moz rank.",
+      "file": "widgets_culture/clippings_cul2.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "cul2"
+    },
+    "authors_mkm": {
+      "title": "Top authors - Mohamed Al Mubarak (culture)",
+      "feeds": [
+        "authors"
+      ],
+      "needs": "Domain, author and sentiment; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs, excluding LMN Exclusions. Sorted by Moz rank.",
+      "file": "widgets_culture/authors_mkm.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "mkm"
+    },
+    "authors_cul1": {
+      "title": "Top authors - Bodour Al Qasimi",
+      "feeds": [
+        "authors"
+      ],
+      "needs": "Domain, author and sentiment; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs, excluding LMN Exclusions. Sorted by Moz rank.",
+      "file": "widgets_culture/authors_cul1.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "cul1"
+    },
+    "authors_cul2": {
+      "title": "Top authors - Al-Mayassa Al Thani",
+      "feeds": [
+        "authors"
+      ],
+      "needs": "Domain, author and sentiment; Mentions, Moz rank. DCT Corporate and EXAD Consumer domain lists, News and Blogs, excluding LMN Exclusions. Sorted by Moz rank.",
+      "file": "widgets_culture/authors_cul2.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "cul2"
+    },
+    "themes_mkm": {
+      "title": "Mentions by theme - Mohamed Al Mubarak (culture)",
+      "feeds": [
+        "themes"
+      ],
+      "needs": "Theme (LMN Themes); Mentions. News and Blogs.",
+      "file": "widgets_culture/themes_mkm.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "mkm"
+    },
+    "themes_cul1": {
+      "title": "Mentions by theme - Bodour Al Qasimi",
+      "feeds": [
+        "themes"
+      ],
+      "needs": "Theme (LMN Themes); Mentions. News and Blogs.",
+      "file": "widgets_culture/themes_cul1.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "cul1"
+    },
+    "themes_cul2": {
+      "title": "Mentions by theme - Al-Mayassa Al Thani",
+      "feeds": [
+        "themes"
+      ],
+      "needs": "Theme (LMN Themes); Mentions. News and Blogs.",
+      "file": "widgets_culture/themes_cul2.json",
+      "status": "received",
+      "edited": "2026-11-28",
+      "run": "per period: 7D, 30D, 90D, YTD",
+      "leader": "cul2"
+    }
+  }
+}

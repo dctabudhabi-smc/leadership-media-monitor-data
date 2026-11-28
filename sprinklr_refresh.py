@@ -30,6 +30,10 @@ CFG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 REG = json.loads((ROOT / "registry.json").read_text(encoding="utf-8"))["widgets"]
 TOKENS = ROOT / ".tokens.json"
 RAW = ROOT / "raw"
+# comparison sets: "business" (registry.json, leaders.json) and "culture" (registry_culture.json, leaders_culture.json)
+PROFILES = {"business": ("registry.json", "leaders.json", "raw"), "culture": ("registry_culture.json", "leaders_culture.json", "raw_culture")}
+PROFILE = {"name": "business", "leaders": "leaders.json", "topic_ids": None}
+NAME_MAP = {}  # topic name -> leader id, looked up from the topic IDs (culture)
 TZ = ZoneInfo(CFG["timezone"])
 def base():
     return f'{os.environ.get("SPRINKLR_API_HOST", CFG["api_host"]).rstrip("/")}/{CFG["env"]}'
@@ -203,15 +207,53 @@ def num(v):
 
 
 # ---------------------------------------------------------------- leaders
+def leaders_file():
+    return json.loads((ROOT / PROFILE["leaders"]).read_text(encoding="utf-8"))
+
+
 def leader_map():
-    L = json.loads((ROOT / "leaders.json").read_text(encoding="utf-8"))
+    L = leaders_file()
     m = {}
     for lid, v in L.items():
         if lid.startswith("_"):
             continue
         for t in v.get("topic_ids", []):
             m[str(t)] = lid
+        if v.get("topic_id"):
+            m[str(v["topic_id"])] = lid
+    m.update(NAME_MAP)
     return m
+
+
+def use_profile(name):
+    """Switch widgets, leaders and raw folder between the business and culture comparison sets."""
+    global REG, RAW
+    reg, leaders, raw = PROFILES[name]
+    REG = json.loads((ROOT / reg).read_text(encoding="utf-8"))["widgets"]
+    RAW = ROOT / raw
+    PROFILE.update({"name": name, "leaders": leaders, "topic_ids": None})
+    NAME_MAP.clear()
+    if name != "business":  # tag-based widgets read this set's topics by ID, so the topic tag does not matter
+        PROFILE["topic_ids"] = [v["topic_id"] for k, v in leaders_file().items() if not k.startswith("_") and v.get("topic_id")]
+
+
+def resolve_names():
+    """Sprinklr returns topic names for TOPIC_IDS: look each topic's name up from its ID (one small call each)."""
+    payload = load_widget("topic_totals")
+    if not payload:
+        return
+    wins, _ = windows()
+    s, e = wins["YTD"]["cur"]
+    th = heading_for(payload, "dim", "TOPIC_IDS")
+    for lid, v in leaders_file().items():
+        if lid.startswith("_") or not v.get("topic_id"):
+            continue
+        _, rows = run_payload(with_window(with_topic(payload, v["topic_id"]), s, e), f"names_{lid}")
+        for r in rows:
+            tid, name = topic_value(r, th)
+            for x in (tid, name):
+                if x and x != "None":
+                    NAME_MAP[str(x)] = lid
 
 
 def topic_value(row, h):
@@ -222,10 +264,17 @@ def topic_value(row, h):
 
 
 # ---------------------------------------------------------------- widget handlers
-def load_widget(role):
+def load_widget(role, raw=False):
     w = REG[role]
     f = ROOT / w["file"]
-    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+    if not f.exists():
+        return None
+    p = json.loads(f.read_text(encoding="utf-8"))
+    ids = PROFILE.get("topic_ids")
+    if not raw and ids and any(x.get("dimensionName") == "TOPIC_TAGS" for x in p.get("filters", [])):
+        p["filters"] = [x for x in p["filters"] if x.get("dimensionName") != "TOPIC_TAGS"] + [
+            {"dimensionName": "TOPIC_IDS", "filterType": "IN", "values": ids, "details": {"type": "DIMENSION", "OLD_DIM_NAME": "TOPIC", "dF": True}}]
+    return p
 
 
 def per_period(role, payload, measures, extra_dim=None, sides=("cur", "prev")):
@@ -273,7 +322,7 @@ def h_sentiment(payload):
 
 def with_topic(payload, topic_id):
     p = copy.deepcopy(payload)
-    p["filters"] = [f for f in p.get("filters", []) if f.get("dimensionName") != "TOPIC_TAGS"] + [
+    p["filters"] = [f for f in p.get("filters", []) if f.get("dimensionName") not in ("TOPIC_TAGS", "TOPIC_IDS")] + [
         {"dimensionName": "TOPIC_IDS", "filterType": "IN", "values": [topic_id], "details": {"type": "DIMENSION", "OLD_DIM_NAME": "TOPIC", "dF": True}}]
     return p
 
@@ -347,7 +396,7 @@ def h_breakdown(role, dim, measures):
     """Dimension x Topic widgets return at most 100 rows, so run them once per leader to keep each leader's long tail.
     Countries go further: see all_countries."""
     def run(payload):
-        L = json.loads((ROOT / "leaders.json").read_text(encoding="utf-8"))
+        L = leaders_file()
         out = {}
         for lid, v in L.items():
             if lid.startswith("_") or not v.get("topic_id"):
@@ -418,8 +467,8 @@ def h_leader_list(dim):
             items = []
             for r in rows:
                 name = topic_value(r, dh)[1] or topic_value(r, dh)[0]
-                if name and name.startswith("LMN | "):  # theme names carry the theme tag prefix
-                    name = name[6:]
+                if name and name.startswith("LMN"):  # theme names carry the theme tag prefix (LMN | , LMN Culture | )
+                    name = re.sub(r"^LMN[^|]{0,30}\|\s*", "", name)
                 if not name or name.lower() in ("none", "null", "unknown"):
                     continue
                 items.append({"name": name, "mentions": int(num(r.get(mh))), "moz": round(num(r.get(zh)), 1) if zh else None})
@@ -691,6 +740,13 @@ def merge(data, results, checks):
             old = data["series"].get(lid, {})
             om = sum(old.get("mentions", [])) or 1
             ratio = {k: sum(old.get(k, [])) / om for k in ("pos", "neg")}  # daily sentiment is not in the widgets
+            st = (results.get("sentiment_topic") or {}).get("YTD", {}).get("cur", {}).get(lid)
+            if st:  # split each day by the leader's year-to-date sentiment mix
+                b = {"pos": 0, "neu": 0, "neg": 0}
+                for lab, v in st.items():
+                    b[sentiment_bucket(lab)] += v["MENTIONS_COUNT"]
+                tot = sum(b.values()) or 1
+                ratio = {"pos": b["pos"] / tot, "neg": b["neg"] / tot}
             s.update({k: [round(m * ratio[k]) for m in s["mentions"]] for k in ("pos", "neg")})
             s["neu"] = [m - p - n for m, p, n in zip(s["mentions"], s["pos"], s["neg"])]
             data["series"][lid] = s
@@ -777,7 +833,7 @@ def merge(data, results, checks):
 
     # payloads, so the dashboard's data checkpoint can show each one
     data["payloads"] = {role: {"title": w.get("title", role), "edited": w.get("edited"), "feeds": w.get("feeds", []),
-                               "note": w.get("note", ""), "json": load_widget(role)} for role, w in REG.items() if load_widget(role)}
+                               "note": w.get("note", ""), "json": load_widget(role, raw=True)} for role, w in REG.items() if load_widget(role, raw=True)}
 
     meta["generated"] = dt.datetime.now(TZ).isoformat(timespec="seconds")
     meta["widgets_live"] = sorted(results)
@@ -790,15 +846,15 @@ def merge(data, results, checks):
     return data
 
 
-def run_checks(results):
+def run_checks(results, lids=("mkm", "kkm", "saj")):
     msgs, ok = [], True
     tt = results.get("topic_totals")
     if tt:
         for per, sides in tt.items():
             m = {lid: v.get("MENTIONS_COUNT", 0) for lid, v in sides["cur"].items()}
-            if len(m) < 3:
+            if len(m) < len(lids):
                 ok = False
-                msgs.append(f"{per}: only {len(m)} of 3 leaders returned data - check leaders.json topic IDs")
+                msgs.append(f"{per}: only {len(m)} of {len(lids)} leaders returned data - check {PROFILE['leaders']} topic IDs")
             if any(v <= 0 for v in m.values()):
                 msgs.append(f"{per}: a leader has zero mentions")
         ts = results.get("topic_share")
@@ -828,7 +884,7 @@ def run_checks(results):
             tot = tt["30D"]["cur"].get(lid, {}).get("MENTIONS_COUNT", 0)
             flag = "" if tot and abs(daily - tot) / tot <= 0.02 else "  <- differs"
             msgs.append(f"30D {lid}: daily widget sum {daily:,} vs totals {tot:,.0f}{flag}")
-    for lid in ("mkm", "kkm", "saj"):
+    for lid in lids:
         au = (results.get(f"authors_{lid}") or {}).get("30D")
         if au is not None:
             ids = sum(1 for a in au if " " not in a["name"] and len(a["name"]) >= 20)
@@ -867,9 +923,7 @@ def cmd_discover(_):
     print("\nPut each leader's topic ID(s) into leaders.json, then run: python sprinklr_refresh.py build --dry-run")
 
 
-def cmd_build(a):
-    if not leader_map():
-        sys.exit("leaders.json has no topic IDs yet. Run: python sprinklr_refresh.py discover")
+def run_all():
     results = {}
     for role in REG:
         if role in SKIP:
@@ -881,6 +935,42 @@ def cmd_build(a):
             continue
         print(f"- {role}: fetching")
         results[role] = h(payload)
+    return results
+
+
+def build_culture(data, msgs):
+    """Second, separate run for the Culture comparison. It never blocks the business data: any failure keeps
+    the previous culture data and is reported in the checks."""
+    if not (ROOT / PROFILES["culture"][0]).exists():
+        return
+    print("\n== Culture comparison")
+    try:
+        use_profile("culture")
+        lids = [k for k in leaders_file() if not k.startswith("_")]
+        resolve_names()
+        rc = run_all()
+        okc, mc = run_checks(rc, lids=lids)
+        msgs.extend("Culture: " + m for m in mc)
+        if not okc:
+            msgs.append("Culture: checks failed, previous culture data kept")
+            return
+        prev = data.get("culture") or {}
+        sub = {"leaders": [{"id": l} for l in lids], "series": prev.get("series", {}), "meta": {}}
+        sub = merge(sub, rc, mc)
+        data["culture"] = {"leaders": lids, "totals": sub.get("totals"), "totals_windows": sub.get("totals_windows"),
+                           "series": sub.get("series"), "breakdowns": sub.get("breakdowns", {}),
+                           "sections": sub["meta"]["sections"], "generated": sub["meta"]["generated"], "start": sub["meta"].get("start")}
+        data.setdefault("payloads", {}).update({"culture__" + r: v for r, v in sub.get("payloads", {}).items()})
+    except (Exception, SystemExit) as e:
+        msgs.append(f"Culture: skipped this run ({str(e)[:200]}); previous culture data kept")
+    finally:
+        use_profile("business")
+
+
+def cmd_build(a):
+    if not leader_map():
+        sys.exit("leaders.json has no topic IDs yet. Run: python sprinklr_refresh.py discover")
+    results = run_all()
     ok, msgs = run_checks(results)
     print("\nChecks:\n  " + "\n  ".join(msgs or ["no checks ran"]))
     if not ok:
@@ -888,6 +978,7 @@ def cmd_build(a):
     path = (ROOT / CFG["data_json"]).resolve()
     data = json.loads(path.read_text(encoding="utf-8"))
     data = merge(data, results, msgs)
+    build_culture(data, msgs)
     live = [k for k, v in data["meta"]["sections"].items() if v == "live"]
     print(f"\nLive sections: {', '.join(live) or 'none'}")
     if a.dry_run:

@@ -1,0 +1,118 @@
+{
+    "report": "SPRINKSIGHTS",
+    "reportingEngine": "LISTENING",
+    "timeField": null,
+    "startTime": 1793217600000,
+    "endTime": 1795809599999,
+    "timeZone": "Asia/Dubai",
+    "page": 0,
+    "pageSize": 20,
+    "filters": [
+        {
+            "dimensionName": "LISTENING_MEDIA_TYPE",
+            "filterType": "IN",
+            "values": [
+                "NEWS",
+                "BLOGS"
+            ],
+            "details": {
+                "uniqueId": "D_LISTENING_MEDIA_TYPE",
+                "DB_FILTER_REPORT_NAME": "SPRINKSIGHTS",
+                "OLD_DIM_NAME": "LISTENING_MEDIA_TYPE",
+                "HAS_ALERT": false,
+                "nameQueryLookupSupported": "true",
+                "supportedMediaCSV": "ALL_SOURCES",
+                "displayNameForWarning": "Source",
+                "HAS_TOOLTIP_DATA": true,
+                "USE_SNAPSHOT_VALUE": false,
+                "type": "DIMENSION",
+                "reportName": "SPRINKSIGHTS",
+                "reports": [
+                    "SPRINKSIGHTS"
+                ],
+                "dataType": null
+            }
+        },
+        {
+            "dimensionName": "TOPIC_TAGS",
+            "filterType": "IN",
+            "values": [
+                "Plain"
+            ],
+            "details": {
+                "displayNameForWarning": "Topic Tag",
+                "USE_SNAPSHOT_VALUE": false,
+                "type": "DIMENSION",
+                "OLD_DIM_NAME": "TOPIC_TAG",
+                "HAS_ALERT": false,
+                "EXIST_FILTER": false,
+                "HAS_TOOLTIP_DATA": true,
+                "reportName": "SPRINKSIGHTS",
+                "reports": [
+                    "SPRINKSIGHTS"
+                ],
+                "dataType": null
+            }
+        }
+    ],
+    "groupBys": [
+        {
+            "heading": "TOPIC_IDS_0",
+            "dimensionName": "TOPIC_IDS",
+            "groupType": "FIELD",
+            "details": {},
+            "namedFilters": null
+        }
+    ],
+    "projections": [
+        {
+            "heading": "M_SPRINKSIGHTS_OVERALL_REACH_0",
+            "measurementName": "OVERALL_REACH",
+            "aggregateFunction": "SUM",
+            "details": {}
+        },
+        {
+            "heading": "M_SPRINKSIGHTS_MENTIONS_COUNT_1",
+            "measurementName": "MENTIONS_COUNT",
+            "aggregateFunction": "SUM",
+            "details": {}
+        },
+        {
+            "heading": "M_SPRINKSIGHTS_EMV_2",
+            "measurementName": "EMV",
+            "aggregateFunction": "SUM",
+            "details": {}
+        },
+        {
+            "heading": "M_SPRINKSIGHTS_DISTINCT_DOMAIN_COUNT_3",
+            "measurementName": "DISTINCT_DOMAIN_COUNT",
+            "aggregateFunction": "SUM",
+            "details": {}
+        }
+    ],
+    "projectionDecorations": [],
+    "projectionFilters": null,
+    "sorts": [
+        {
+            "heading": "M_SPRINKSIGHTS_MENTIONS_COUNT_1",
+            "order": "DESC"
+        }
+    ],
+    "streamRequestInfo": null,
+    "additional": {
+        "Timezone": "Asia/Dubai",
+        "translateResponse": "false",
+        "fetchUnhealthyAccounts": "false",
+        "widgetId": "6b07e967ff5defd421f2a9d5",
+        "exportInfo": "false",
+        "MARGIN": "false",
+        "dashboardId": "6b047181e37db77869345c15",
+        "engine": "LISTENING",
+        "showTotal": "false",
+        "chartType": "TABLE",
+        "showRolloverTrends": "true",
+        "TABULAR": "true"
+    },
+    "skipResolve": false,
+    "jsonResponse": false
+}

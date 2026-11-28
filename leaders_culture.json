@@ -1,0 +1,18 @@
+{
+  "_how_to_fill": "Culture comparison topics. Leader ids match the dashboard: mkm is Mohamed's culture-only topic in this set. Topic names are looked up from the IDs at each refresh.",
+  "mkm": {
+    "name": "H.E. Mohamed Khalifa Al Mubarak (culture)",
+    "topic_ids": [],
+    "topic_id": "6b07ef68ff5defd421f5834d"
+  },
+  "cul1": {
+    "name": "H.H. Sheikha Bodour bint Sultan Al Qasimi",
+    "topic_ids": [],
+    "topic_id": "6b07eefeff5defd421f550b6"
+  },
+  "cul2": {
+    "name": "H.E. Sheikha Al-Mayassa bint Hamad bin Khalifa Al Thani",
+    "topic_ids": [],
+    "topic_id": "6b07eeddff5defd421f540c1"
+  }
+}

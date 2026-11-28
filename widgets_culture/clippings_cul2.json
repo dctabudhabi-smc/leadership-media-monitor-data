@@ -1,0 +1,206 @@
+{
+    "report": "SPRINKSIGHTS",
+    "reportingEngine": "LISTENING",
+    "timeField": null,
+    "startTime": 1793217600000,
+    "endTime": 1795809599999,
+    "timeZone": "Asia/Dubai",
+    "page": 0,
+    "pageSize": 20,
+    "filters": [
+        {
+            "dimensionName": "TOPIC_IDS",
+            "filterType": "IN",
+            "values": [
+                "6b07eeddff5defd421f540c1"
+            ],
+            "details": {
+                "displayNameForWarning": "Topic",
+                "USE_SNAPSHOT_VALUE": false,
+                "type": "DIMENSION",
+                "dF": true,
+                "OLD_DIM_NAME": "TOPIC",
+                "nameQueryLookupSupported": "true",
+                "DRILLDOWN": false,
+                "EXIST_FILTER": false,
+                "reportName": "SPRINKSIGHTS",
+                "reports": [
+                    "SPRINKSIGHTS"
+                ],
+                "HAS_ALERT": false,
+                "HAS_TOOLTIP_DATA": true,
+                "dataType": null
+            }
+        },
+        {
+            "dimensionName": "LISTENING_MEDIA_TYPE",
+            "filterType": "IN",
+            "values": [
+                "NEWS",
+                "BLOGS"
+            ],
+            "details": {
+                "displayNameForWarning": "Source",
+                "USE_SNAPSHOT_VALUE": false,
+                "type": "DIMENSION",
+                "OLD_DIM_NAME": "LISTENING_MEDIA_TYPE",
+                "HAS_ALERT": false,
+                "nameQueryLookupSupported": "true",
+                "supportedMediaCSV": "ALL_SOURCES",
+                "HAS_TOOLTIP_DATA": true,
+                "reportName": "SPRINKSIGHTS",
+                "reports": [
+                    "SPRINKSIGHTS"
+                ],
+                "dataType": null
+            }
+        },
+        {
+            "dimensionName": "LST_DOMAIN_LIST_TAG",
+            "filterType": "IN",
+            "values": [
+                "EXAD Consumer",
+                "DCT Corporate"
+            ],
+            "details": {
+                "displayNameForWarning": "Domain List Tag",
+                "USE_SNAPSHOT_VALUE": false,
+                "type": "DIMENSION",
+                "dF": true,
+                "OLD_DIM_NAME": "DOMAIN_LIST_TAG",
+                "HAS_ALERT": false,
+                "showAsDashbaordFilter": "true",
+                "EXIST_FILTER": false,
+                "HAS_TOOLTIP_DATA": true,
+                "reportName": "SPRINKSIGHTS",
+                "reports": [
+                    "SPRINKSIGHTS"
+                ],
+                "dataType": null
+            }
+        },
+        {
+            "dimensionName": "LST_DOMAIN_LIST_TAG",
+            "filterType": "NIN",
+            "values": [
+                "LMN Exclusions"
+            ],
+            "details": {
+                "displayNameForWarning": "Domain List Tag",
+                "USE_SNAPSHOT_VALUE": false,
+                "type": "DIMENSION",
+                "dF": true,
+                "OLD_DIM_NAME": "DOMAIN_LIST_TAG",
+                "HAS_ALERT": false,
+                "showAsDashbaordFilter": "true",
+                "EXIST_FILTER": false,
+                "HAS_TOOLTIP_DATA": true,
+                "reportName": "SPRINKSIGHTS",
+                "reports": [
+                    "SPRINKSIGHTS"
+                ],
+                "dataType": null
+            }
+        }
+    ],
+    "groupBys": [
+        {
+            "heading": "TOPIC_IDS_0",
+            "dimensionName": "TOPIC_IDS",
+            "groupType": "FIELD",
+            "details": {},
+            "namedFilters": null
+        },
+        {
+            "heading": "ES_MESSAGE_ID_1",
+            "dimensionName": "ES_MESSAGE_ID",
+            "groupType": "FIELD",
+            "details": {},
+            "namedFilters": null
+        },
+        {
+            "heading": "SN_CREATED_TIME_2",
+            "dimensionName": "SN_CREATED_TIME",
+            "groupType": "DATE_HISTOGRAM",
+            "details": {
+                "isDateTypeDimension": true,
+                "interval": "1d"
+            },
+            "namedFilters": null
+        },
+        {
+            "heading": "DOMAINS_3",
+            "dimensionName": "DOMAINS",
+            "groupType": "FIELD",
+            "details": {},
+            "namedFilters": null
+        },
+        {
+            "heading": "COUNTRY_4",
+            "dimensionName": "COUNTRY",
+            "groupType": "FIELD",
+            "details": {},
+            "namedFilters": null
+        },
+        {
+            "heading": "LST_SUPP_LNG_5",
+            "dimensionName": "LST_SUPP_LNG",
+            "groupType": "FIELD",
+            "details": {},
+            "namedFilters": null
+        },
+        {
+            "heading": "MESSAGE_CONTENT_6",
+            "dimensionName": "MESSAGE_CONTENT",
+            "groupType": "FIELD",
+            "details": {},
+            "namedFilters": null
+        },
+        {
+            "heading": "SEM_SENTIMENT_7",
+            "dimensionName": "SEM_SENTIMENT",
+            "groupType": "FIELD",
+            "details": {},
+            "namedFilters": null
+        }
+    ],
+    "projections": [
+        {
+            "heading": "M_SPRINKSIGHTS_OVERALL_REACH_0",
+            "measurementName": "OVERALL_REACH",
+            "aggregateFunction": "SUM",
+            "details": {}
+        },
+        {
+            "heading": "M_SPRINKSIGHTS_MOZ_RANK_1",
+            "measurementName": "MOZ_RANK",
+            "aggregateFunction": "AVG",
+            "details": {}
+        }
+    ],
+    "projectionDecorations": [],
+    "projectionFilters": null,
+    "sorts": [
+        {
+            "heading": "M_SPRINKSIGHTS_MOZ_RANK_1",
+            "order": "DESC"
+        }
+    ],
+    "streamRequestInfo": null,
+    "additional": {
+        "Timezone": "Asia/Dubai",
+        "translateResponse": "false",
+        "fetchUnhealthyAccounts": "false",
+        "widgetId": "6b07e967ff5defd421f2aa30",
+        "exportInfo": "false",
+        "MARGIN": "false",
+        "dashboardId": "6b047181e37db77869345c15",
+        "engine": "LISTENING",
+        "showTotal": "true",
+        "chartType": "TABLE",
+        "showRolloverTrends": "true",
+        "TABULAR": "true"
+    },
+    "skipResolve": false,
+    "jsonResponse": false
+}
