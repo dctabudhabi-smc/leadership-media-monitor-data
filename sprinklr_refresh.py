@@ -483,7 +483,9 @@ def parse_clip(r, H, M, lid, fx):
     msg = r.get(H.get("ES_MESSAGE_ID")) or {}
     if not isinstance(msg, dict) or not msg.get("permalink"):
         return None
-    title = (msg.get("title") or str(r.get(H.get("MESSAGE_CONTENT"), "")).split("\n")[0]).strip()
+    title = (msg.get("title") or str(r.get(H.get("MESSAGE_CONTENT"), "")).split("\n")[0]).strip().lstrip("\u2022\u00b7 ").strip()
+    if "clipped from video" in title.lower() or re.match(r"^video\s+\d+:\d+", title, re.I):  # video page with no headline
+        return None
     if not title or sum(title.count(ch) for ch in "ŘŮŰÃâ€") > 3:  # garbled encoding at source
         return None
     outlet = ""
@@ -541,7 +543,9 @@ def author_name(v):
         n = n or str((v.get("contactInfo") or {}).get("fullName") or "")
     else:
         n = str(v or "")
-    n = re.sub(r"^\s*(by|\u0645\u0646 \u0642\u0628\u0644|\u0628\u0642\u0644\u0645)\s+", "", n.strip(), flags=re.I)  # By, Arabic "by"
+    n = re.sub(r"^\s*written\s*by\s*", "", n.strip(), flags=re.I)  # "Written byName"
+    n = re.sub(r"^\s*(by|\u0645\u0646 \u0642\u0628\u0644|\u0628\u0642\u0644\u0645)\s+", "", n, flags=re.I)  # By, Arabic "by"
+    n = re.sub(r"^\u0631\u0633\u0627\u0644\u0629\s+\S+\s+", "", n)  # Arabic "dispatch from <city>" before the name
     parts = n.split(" - ", 1)
     if len(parts) == 2 and parts[1].strip() and len(parts[0].split()) <= 2:  # dateline first: "Abu Dhabi - Name"
         n = parts[1]
@@ -584,6 +588,35 @@ def is_outlet_itself(author, domain):
     return False
 
 
+def author_key(name):
+    """Comparison key: case, spacing and Arabic letter variants (alif forms, final ya, ta marbuta) ignored."""
+    k = " ".join(str(name).lower().split())
+    for a, b in (("\u0623", "\u0627"), ("\u0625", "\u0627"), ("\u0622", "\u0627"), ("\u0649", "\u064a"), ("\u0629", "\u0647")):
+        k = k.replace(a, b)
+    return k
+
+
+def merge_similar(items):
+    """One row per person: merge rows whose key is the same, or a cut-off version of another (6+ letters)."""
+    out = []
+    for a in items:
+        ka = author_key(a["name"])
+        hit = next((b for b in out if author_key(b["name"]) == ka or (min(len(ka), len(author_key(b["name"]))) >= 6 and
+                    (ka.startswith(author_key(b["name"])) or author_key(b["name"]).startswith(ka)))), None)
+        if not hit:
+            out.append(a)
+            continue
+        if len(a["name"]) > len(hit["name"]):
+            hit["name"] = a["name"]
+        for k in ("mentions", "pos", "neu", "neg"):
+            hit[k] += a.get(k, 0)
+        o = dict(hit["outlets"]) if isinstance(hit["outlets"], dict) else {x: 0 for x in hit["outlets"]}
+        for x, n in (a["outlets"].items() if isinstance(a["outlets"], dict) else ((x, 0) for x in a["outlets"])):
+            o[x] = o.get(x, 0) + n
+        hit["outlets"] = o
+    return out
+
+
 def h_authors(payload, role):
     """Top authors for one leader in every period: one row per author (no duplicates across sentiment or
     outlets), Sprinklr's order (Moz rank), authors that are only the outlet's own name left out."""
@@ -603,7 +636,7 @@ def h_authors(payload, role):
             domain = str(topic_value(r, dh)[1] or topic_value(r, dh)[0] or "").strip()
             if not name or is_outlet_itself(name, domain):
                 continue
-            key = " ".join(name.lower().split())
+            key = author_key(name)
             a = by.get(key)
             if not a:
                 a = by[key] = {"name": name, "outlets": {}, "mentions": 0, "pos": 0, "neu": 0, "neg": 0,
@@ -615,8 +648,7 @@ def h_authors(payload, role):
             if domain and domain.lower() not in ("none", "null", "unknown"):
                 a["outlets"][domain] = a["outlets"].get(domain, 0) + n
         items = []
-        for key in order[:CFG.get("authors_per_leader", 10)]:
-            a = by[key]
+        for a in merge_similar([by[k] for k in order])[:CFG.get("authors_per_leader", 10)]:
             outs = sorted(a["outlets"].items(), key=lambda x: -x[1])
             a["outlet"] = outs[0][0] if outs else ""
             a["outlets"] = [o for o, _ in outs]

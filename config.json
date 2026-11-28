@@ -84,11 +84,21 @@
     "Staff Reporter",
     "Our Correspondent",
     "New York Post",
-    "NY Post"
+    "NY Post",
+    "Qatar Peninsula",
+    "The Peninsula",
+    "Peninsula Qatar",
+    "QNA",
+    "Qatar News Agency",
+    "Sharjah24",
+    "Al Khaleej"
   ],
   "_author_exclude_note": "Bylines that are an agency or publication, not a person. author_exclude hides exact names; author_exclude_prefix hides any byline starting with that text (for example Asharq Al-Awsat datelines).",
   "author_exclude_prefix": [
     "الشرق الأوسط",
-    "BBC Monitoring"
+    "BBC Monitoring",
+    "QNA ",
+    "Qna ",
+    "وكالة الأنباء القطرية"
   ]
 }
